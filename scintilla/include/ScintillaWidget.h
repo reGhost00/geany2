@@ -31,12 +31,12 @@ typedef struct _ScintillaObject ScintillaObject;
 typedef struct _ScintillaClass  ScintillaObjectClass;
 
 struct _ScintillaObject {
-	GtkContainer cont;
+	GtkWidget parent_instance;
 	void *pscin;
 };
 
 struct _ScintillaClass {
-	GtkContainerClass parent_class;
+	GtkWidgetClass parent_class;
 
 	void (* command) (ScintillaObject *sci, int cmd, GtkWidget *window);
 	void (* notify) (ScintillaObject *sci, int id, SCNotification *scn);
