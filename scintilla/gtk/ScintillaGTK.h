@@ -47,12 +47,12 @@ class ScintillaGTK : public ScintillaBase {
 
 	GtkWidgetClass *parentClass;
 
-	static inline GdkAtom atomUTF8 {};
-	static inline GdkAtom atomUTF8Mime {};
-	static inline GdkAtom atomString {};
-	static inline GdkAtom atomUriList {};
-	static inline GdkAtom atomDROPFILES_DND {};
-	GdkAtom atomSought;
+	static inline const char *atomUTF8;
+	static inline const char *atomUTF8Mime;
+	static inline const char *atomString;
+	static inline const char *atomUriList;
+	static inline const char *atomDROPFILES_DND;
+	const char *atomSought;
 	size_t inClearSelection = 0;
 
 #if PLAT_GTK_WIN32
@@ -98,7 +98,7 @@ public:
 	ScintillaGTK &operator=(ScintillaGTK &&) = delete;
 	~ScintillaGTK() override;
 	static ScintillaGTK *FromWidget(GtkWidget *widget) noexcept;
-	static void ClassInit(OBJECT_CLASS *object_class, GtkWidgetClass *widget_class, GtkContainerClass *container_class);
+	static void ClassInit(OBJECT_CLASS *object_class, GtkWidgetClass *widget_class);
 private:
 	void Init();
 	void Finalise() override;
@@ -149,33 +149,21 @@ private:
 	int KeyDefault(Scintilla::Keys key, Scintilla::KeyMod modifiers) override;
 	void CopyToClipboard(const SelectionText &selectedText) override;
 	void Copy() override;
-	void RequestSelection(GdkAtom atomSelection);
+	void RequestSelection(GdkClipboard *clipboard);
 	void Paste() override;
 	void CreateCallTipWindow(PRectangle rc) override;
 	void AddToPopUp(const char *label, int cmd = 0, bool enabled = true) override;
 	bool OwnPrimarySelection();
 	void ClaimSelection() override;
-	static bool IsStringAtom(GdkAtom type);
-	void GetGtkSelectionText(GtkSelectionData *selectionData, SelectionText &selText);
-	void InsertSelection(GtkClipboard *clipBoard, GtkSelectionData *selectionData);
+	void InsertSelection(GdkClipboard *clipboard, const char *text, gssize len);
 public:	// Public for SelectionReceiver
 	GObject *MainObject() const noexcept;
-	void ReceivedClipboard(GtkClipboard *clipBoard, GtkSelectionData *selection_data) noexcept;
+	void ReceivedClipboard(GdkClipboard *clipboard, const char *text, gssize len) noexcept;
 private:
-	void ReceivedSelection(GtkSelectionData *selection_data);
-	void ReceivedDrop(GtkSelectionData *selection_data);
-	static void GetSelection(GtkSelectionData *selection_data, guint info, SelectionText *text);
+	void ReceivedDrop(const GValue *value, double x, double y);
 	void StoreOnClipboard(SelectionText *clipText);
-	static void ClipboardGetSelection(GtkClipboard *clip, GtkSelectionData *selection_data, guint info, void *data);
-	static void ClipboardClearSelection(GtkClipboard *clip, void *data);
 
 	void ClearPrimarySelection();
-	void PrimaryGetSelectionThis(GtkClipboard *clip, GtkSelectionData *selection_data, guint info);
-	static void PrimaryGetSelection(GtkClipboard *clip, GtkSelectionData *selection_data, guint info, gpointer pSci);
-	void PrimaryClearSelectionThis(GtkClipboard *clip);
-	static void PrimaryClearSelection(GtkClipboard *clip, gpointer pSci);
-
-	void UnclaimSelection(GdkEventSelection *selection_event);
 	void Resize(int width, int height);
 
 	// Callback functions
@@ -188,47 +176,21 @@ private:
 	void UnMapThis();
 	static void UnMap(GtkWidget *widget);
 	gint FocusInThis(GtkWidget *widget);
-	static gint FocusIn(GtkWidget *widget, GdkEventFocus *event);
 	gint FocusOutThis(GtkWidget *widget);
-	static gint FocusOut(GtkWidget *widget, GdkEventFocus *event);
-	static void SizeRequest(GtkWidget *widget, GtkRequisition *requisition);
-#if GTK_CHECK_VERSION(3,0,0)
 	static void GetPreferredWidth(GtkWidget *widget, gint *minimalWidth, gint *naturalWidth);
 	static void GetPreferredHeight(GtkWidget *widget, gint *minimalHeight, gint *naturalHeight);
-#endif
-	static void SizeAllocate(GtkWidget *widget, GtkAllocation *allocation);
+	static void SizeAllocate(GtkWidget *widget, int width, int height, int baseline);
 	void CheckForFontOptionChange();
-#if GTK_CHECK_VERSION(3,0,0)
 	gboolean DrawTextThis(cairo_t *cr);
-	static gboolean DrawText(GtkWidget *widget, cairo_t *cr, ScintillaGTK *sciThis);
 	gboolean DrawThis(cairo_t *cr);
-	static gboolean DrawMain(GtkWidget *widget, cairo_t *cr);
-#else
-	gboolean ExposeTextThis(GtkWidget *widget, GdkEventExpose *ose);
-	static gboolean ExposeText(GtkWidget *widget, GdkEventExpose *ose, ScintillaGTK *sciThis);
-	gboolean Expose(GtkWidget *widget, GdkEventExpose *ose);
-	static gboolean ExposeMain(GtkWidget *widget, GdkEventExpose *ose);
-#endif
-	void ForAll(GtkCallback callback, gpointer callback_data);
-	static void MainForAll(GtkContainer *container, gboolean include_internals, GtkCallback callback, gpointer callback_data);
+	static void Snapshot(GtkWidget *widget, GtkSnapshot *snapshot);
 
 	static void ScrollSignal(GtkAdjustment *adj, ScintillaGTK *sciThis);
 	static void ScrollHSignal(GtkAdjustment *adj, ScintillaGTK *sciThis);
-	gint PressThis(GdkEventButton *event);
-	static gint Press(GtkWidget *widget, GdkEventButton *event);
-	static gint MouseRelease(GtkWidget *widget, GdkEventButton *event);
-	static gint ScrollEvent(GtkWidget *widget, GdkEventScroll *event);
-	static gint Motion(GtkWidget *widget, GdkEventMotion *event);
-	gboolean KeyThis(GdkEventKey *event);
-	static gboolean KeyPress(GtkWidget *widget, GdkEventKey *event);
-	static gboolean KeyRelease(GtkWidget *widget, GdkEventKey *event);
-#if GTK_CHECK_VERSION(3,0,0)
+	gint PressThis(int n_press, double x, double y, GtkGestureClick *gesture);
+	gboolean KeyThis(guint keyval, guint keycode, GdkModifierType state);
 	gboolean DrawPreeditThis(GtkWidget *widget, cairo_t *cr);
 	static gboolean DrawPreedit(GtkWidget *widget, cairo_t *cr, ScintillaGTK *sciThis);
-#else
-	gboolean ExposePreeditThis(GtkWidget *widget, GdkEventExpose *ose);
-	static gboolean ExposePreedit(GtkWidget *widget, GdkEventExpose *ose, ScintillaGTK *sciThis);
-#endif
 	AtkObject *GetAccessibleThis(GtkWidget *widget);
 	static AtkObject *GetAccessible(GtkWidget *widget);
 
@@ -245,27 +207,14 @@ private:
 					  ScintillaGTK *sciThis);
 	void SetCandidateWindowPos();
 
-	static void StyleSetText(GtkWidget *widget, GtkStyle *previous, void *);
 	static void RealizeText(GtkWidget *widget, void *);
 	static void Dispose(GObject *object);
 	static void Destroy(GObject *object);
-	static void SelectionReceived(GtkWidget *widget, GtkSelectionData *selection_data,
-				      guint time);
-	static void SelectionGet(GtkWidget *widget, GtkSelectionData *selection_data,
-				 guint info, guint time);
-	static gint SelectionClear(GtkWidget *widget, GdkEventSelection *selection_event);
-	gboolean DragMotionThis(GdkDragContext *context, gint x, gint y, guint dragtime);
-	static gboolean DragMotion(GtkWidget *widget, GdkDragContext *context,
-				   gint x, gint y, guint dragtime);
-	static void DragLeave(GtkWidget *widget, GdkDragContext *context,
-			      guint time);
-	static void DragEnd(GtkWidget *widget, GdkDragContext *context);
-	static gboolean Drop(GtkWidget *widget, GdkDragContext *context,
-			     gint x, gint y, guint time);
-	static void DragDataReceived(GtkWidget *widget, GdkDragContext *context,
-				     gint x, gint y, GtkSelectionData *selection_data, guint info, guint time);
-	static void DragDataGet(GtkWidget *widget, GdkDragContext *context,
-				GtkSelectionData *selection_data, guint info, guint time);
+	gboolean DragMotionThis(double x, double y);
+	static GdkDragAction DragMotion(GtkDropTarget *target, double x, double y, gpointer data);
+	static void DragLeave(GtkDropTarget *target, gpointer data);
+	static gboolean Drop(GtkDropTarget *target, const GValue *value, double x, double y, gpointer data);
+	static void DragEnd(GtkDragSource *source, GdkDrag *drag, gboolean delete_data, gpointer data);
 	static gboolean TimeOut(gpointer ptt);
 	static gboolean IdleCallback(gpointer pSci);
 	static gboolean StyleIdle(gpointer pSci);
@@ -274,12 +223,7 @@ private:
 	void SetDocPointer(Document *document) override;
 	static void PopUpCB(GtkMenuItem *menuItem, ScintillaGTK *sciThis);
 
-#if GTK_CHECK_VERSION(3,0,0)
 	static gboolean DrawCT(GtkWidget *widget, cairo_t *cr, CallTip *ctip);
-#else
-	static gboolean ExposeCT(GtkWidget *widget, GdkEventExpose *ose, CallTip *ctip);
-#endif
-	static gboolean PressCT(GtkWidget *widget, GdkEventButton *event, ScintillaGTK *sciThis);
 
 	static sptr_t DirectFunction(sptr_t ptr,
 				     unsigned int iMessage, uptr_t wParam, sptr_t lParam);
