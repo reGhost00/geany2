@@ -1,0 +1,320 @@
+{
+  "name": "vscode-meson-tools",
+  "displayName": "Meson Build Tools",
+  "description": "Full-featured Meson build system integration for VS Code, inspired by CMake Tools",
+  "version": "0.1.0",
+  "publisher": "meson-tools",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "meson",
+    "build",
+    "c",
+    "c++",
+    "ninja"
+  ],
+  "activationEvents": [
+    "workspaceContains:meson.build"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "meson-explorer",
+          "title": "Meson",
+          "icon": "media/meson.svg"
+        }
+      ]
+    },
+    "views": {
+      "meson-explorer": [
+        {
+          "id": "mesonProjectStatus",
+          "name": "Project Status",
+          "when": "meson:hasProject"
+        },
+        {
+          "id": "mesonTargetOutline",
+          "name": "Build Targets",
+          "when": "meson:hasProject"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "meson.configure",
+        "title": "Meson: Configure",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "meson.reconfigure",
+        "title": "Meson: Reconfigure",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "meson.build",
+        "title": "Meson: Build",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "meson.buildTarget",
+        "title": "Meson: Build Target",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "meson.clean",
+        "title": "Meson: Clean",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "meson.install",
+        "title": "Meson: Install",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "meson.test",
+        "title": "Meson: Run Tests",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "meson.run",
+        "title": "Meson: Run",
+        "icon": "$(play)"
+      },
+      {
+        "command": "meson.debug",
+        "title": "Meson: Debug",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "meson.selectBuildType",
+        "title": "Meson: Select Build Type"
+      },
+      {
+        "command": "meson.selectBuildTarget",
+        "title": "Meson: Select Build Target"
+      },
+      {
+        "command": "meson.selectRunTarget",
+        "title": "Meson: Select Run Target"
+      },
+      {
+        "command": "meson.selectDebugTarget",
+        "title": "Meson: Select Debug Target"
+      },
+      {
+        "command": "meson.refreshTargets",
+        "title": "Meson: Refresh Targets",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "meson.openMesonLog",
+        "title": "Meson: Open Meson Log"
+      },
+      {
+        "command": "meson.editOptions",
+        "title": "Meson: Edit Options"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "meson.refreshTargets",
+          "when": "view == mesonTargetOutline",
+          "group": "navigation"
+        },
+        {
+          "command": "meson.configure",
+          "when": "view == mesonProjectStatus",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "meson.buildTarget",
+          "when": "view == mesonTargetOutline && viewItem =~ /^target\\./",
+          "group": "inline"
+        },
+        {
+          "command": "meson.run",
+          "when": "view == mesonTargetOutline && viewItem == target.executable",
+          "group": "inline"
+        },
+        {
+          "command": "meson.debug",
+          "when": "view == mesonTargetOutline && viewItem == target.executable",
+          "group": "inline"
+        }
+      ]
+    },
+    "taskDefinitions": [
+      {
+        "type": "meson",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The meson command to run",
+            "enum": [
+              "configure",
+              "build",
+              "test",
+              "install",
+              "clean"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "description": "The target to build/run"
+          },
+          "options": {
+            "type": "object",
+            "description": "Additional meson options"
+          }
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Meson Build Tools",
+      "properties": {
+        "meson.buildDirectory": {
+          "type": "string",
+          "default": "builddir",
+          "description": "The build directory name (relative to workspace root)"
+        },
+        "meson.mesonPath": {
+          "type": "string",
+          "default": "meson",
+          "description": "Path to the meson executable"
+        },
+        "meson.ninjaPath": {
+          "type": "string",
+          "default": "ninja",
+          "description": "Path to the ninja executable"
+        },
+        "meson.buildType": {
+          "type": "string",
+          "default": "debug",
+          "enum": [
+            "debug",
+            "debugoptimized",
+            "release",
+            "minsize",
+            "plain"
+          ],
+          "description": "Default build type"
+        },
+        "meson.configureOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically configure project when workspace is opened"
+        },
+        "meson.configureOptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional options to pass to 'meson setup'"
+        },
+        "meson.compileOptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional options to pass to 'meson compile'"
+        },
+        "meson.testOptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional options to pass to 'meson test'"
+        },
+        "meson.environment": {
+          "type": "object",
+          "default": {},
+          "description": "Environment variables for meson commands"
+        }
+      }
+    },
+    "debuggers": [
+      {
+        "type": "meson-gdb",
+        "label": "Meson: GDB",
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "description": "The target executable name"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Command line arguments"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory"
+              },
+              "environment": {
+                "type": "object",
+                "description": "Environment variables"
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "Meson: Launch (GDB)",
+            "description": "Debug a Meson target with GDB",
+            "body": {
+              "type": "cppdbg",
+              "request": "launch",
+              "name": "Meson: Debug ${1:target}",
+              "program": "^\"\\${workspaceFolder}/${2:builddir}/${1:target}\"",
+              "args": [],
+              "cwd": "^\"\\${workspaceFolder}\"",
+              "MIMode": "gdb"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "ts-loader": "^9.0.0",
+    "typescript": "^5.0.0",
+    "webpack": "^5.0.0",
+    "webpack-cli": "^5.0.0"
+  }
+}
