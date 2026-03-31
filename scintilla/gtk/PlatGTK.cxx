@@ -27,9 +27,7 @@
 #if defined(GDK_WINDOWING_WAYLAND)
 #include <gdk/gdkwayland.h>
 #endif
-#if GTK_CHECK_VERSION(3, 10, 0)
 #include <cairo/cairo-gobject.h>
-#endif
 
 #include "ScintillaTypes.h"
 #include "ScintillaMessages.h"
@@ -1204,14 +1202,15 @@ void Window::Destroy() noexcept {
 	if (wid) {
 		ListBox *listbox = dynamic_cast<ListBox *>(this);
 		if (listbox) {
-			gtk_widget_hide(GTK_WIDGET(wid));
-			// clear up window content
+			gtk_widget_set_visible(GTK_WIDGET(wid), FALSE);
 			listbox->Clear();
-			// resize the window to the smallest possible size for it to adapt
-			// to future content
-			gtk_window_resize(GTK_WINDOW(wid), 1, 1);
+			gtk_window_set_default_size(GTK_WINDOW(wid), 1, 1);
 		} else {
-			gtk_widget_destroy(GTK_WIDGET(wid));
+			GtkWidget *widget = GTK_WIDGET(wid);
+			GtkWidget *parent = gtk_widget_get_parent(widget);
+			if (parent) {
+				gtk_widget_unparent(widget);
+			}
 		}
 		wid = nullptr;
 	}
@@ -1245,25 +1244,15 @@ void Window::SetPosition(PRectangle rc) {
 namespace {
 
 GdkRectangle MonitorRectangleForWidget(GtkWidget *wid) noexcept {
-	GdkWindow *wnd = WindowFromWidget(wid);
 	GdkRectangle rcScreen = GdkRectangle();
-#if GTK_CHECK_VERSION(3,22,0)
 	GdkDisplay *pdisplay = gtk_widget_get_display(wid);
-	GdkMonitor *monitor = gdk_display_get_monitor_at_window(pdisplay, wnd);
-	gdk_monitor_get_geometry(monitor, &rcScreen);
-#if defined(GDK_WINDOWING_WAYLAND)
-	if (GDK_IS_WAYLAND_DISPLAY(pdisplay)) {
-		// The GDK behavior on Wayland is not self-consistent, we must correct the display coordinates to match
-		// the coordinate space used in gtk_window_move. See also https://sourceforge.net/p/scintilla/bugs/2296/
-		rcScreen.x = 0;
-		rcScreen.y = 0;
+	GdkSurface *surface = SurfaceFromWidget(wid);
+	if (surface) {
+		GdkMonitor *monitor = gdk_display_get_monitor_at_surface(pdisplay, surface);
+		if (monitor) {
+			gdk_monitor_get_geometry(monitor, &rcScreen);
+		}
 	}
-#endif
-#else
-	GdkScreen *screen = gtk_widget_get_screen(wid);
-	const gint monitor_num = gdk_screen_get_monitor_at_window(screen, wnd);
-	gdk_screen_get_monitor_geometry(screen, monitor_num, &rcScreen);
-#endif
 	return rcScreen;
 }
 
@@ -1273,10 +1262,16 @@ void Window::SetPositionRelative(PRectangle rc, const Window *relativeTo) {
 	const IntegerRectangle irc(rc);
 	int ox = 0;
 	int oy = 0;
-	GdkWindow *wndRelativeTo = WindowFromWidget(PWidget(relativeTo->wid));
-	gdk_window_get_origin(wndRelativeTo, &ox, &oy);
-	ox += irc.left;
-	oy += irc.top;
+	// In GTK4, get position via native surface transform
+	GtkNative *native = gtk_widget_get_native(PWidget(relativeTo->wid));
+	double nx = 0, ny = 0;
+	if (native) {
+		gtk_native_get_surface_transform(native, &nx, &ny);
+	}
+	GtkAllocation alloc;
+	gtk_widget_get_allocation(PWidget(relativeTo->wid), &alloc);
+	ox = static_cast<int>(nx) + alloc.x + irc.left;
+	oy = static_cast<int>(ny) + alloc.y + irc.top;
 
 	const GdkRectangle rcMonitor = MonitorRectangleForWidget(PWidget(relativeTo->wid));
 
@@ -1292,9 +1287,7 @@ void Window::SetPositionRelative(PRectangle rc, const Window *relativeTo) {
 	else if (oy + sizey > rcMonitor.y + rcMonitor.height)
 		oy = rcMonitor.y + rcMonitor.height - sizey;
 
-	gtk_window_move(GTK_WINDOW(PWidget(wid)), ox, oy);
-
-	gtk_window_resize(GTK_WINDOW(wid), sizex, sizey);
+	gtk_window_set_default_size(GTK_WINDOW(PWidget(wid)), sizex, sizey);
 }
 
 PRectangle Window::GetClientPosition() const {
@@ -1329,66 +1322,60 @@ void Window::SetCursor(Cursor curs) {
 		return;
 
 	cursorLast = curs;
-	GdkDisplay *pdisplay = gtk_widget_get_display(PWidget(wid));
-
-	GdkCursor *gdkCurs;
+	const char *cursorName;
 	switch (curs) {
 	case Cursor::text:
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_XTERM);
+		cursorName = "text";
 		break;
 	case Cursor::arrow:
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_LEFT_PTR);
+		cursorName = "default";
 		break;
 	case Cursor::up:
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_CENTER_PTR);
+		cursorName = "n-resize";
 		break;
 	case Cursor::wait:
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_WATCH);
+		cursorName = "wait";
 		break;
 	case Cursor::hand:
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_HAND2);
+		cursorName = "pointer";
 		break;
 	case Cursor::reverseArrow:
-#ifdef G_OS_WIN32
-		// GDK_RIGHT_PTR is scaled incorrectly under Windows with HiDPI screens (GTK 3.24);
-		// GDK_HAND2 is mapped to a native Windows cursor by GTK
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_HAND2);
-#else
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_RIGHT_PTR);
-#endif
+		cursorName = "default";
 		break;
 	default:
-		gdkCurs = gdk_cursor_new_for_display(pdisplay, GDK_LEFT_PTR);
+		cursorName = "default";
 		cursorLast = Cursor::arrow;
 		break;
 	}
 
-	if (WindowFromWidget(PWidget(wid)))
-		gdk_window_set_cursor(WindowFromWidget(PWidget(wid)), gdkCurs);
-	if (gdkCurs)
-		UnRefCursor(gdkCurs);
+	gtk_widget_set_cursor_from_name(PWidget(wid), cursorName);
 }
 
 /* Returns rectangle of monitor pt is on, both rect and pt are in Window's
    gdk window coordinates */
 PRectangle Window::GetMonitorRect(Point pt) {
-	gint x_offset, y_offset;
+	gint x_offset = 0, y_offset = 0;
 
-	gdk_window_get_origin(WindowFromWidget(PWidget(wid)), &x_offset, &y_offset);
+	GtkNative *native = gtk_widget_get_native(PWidget(wid));
+	double nx = 0, ny = 0;
+	if (native) {
+		gtk_native_get_surface_transform(native, &nx, &ny);
+	}
+	GtkAllocation alloc;
+	gtk_widget_get_allocation(PWidget(wid), &alloc);
+	x_offset = static_cast<int>(nx) + alloc.x;
+	y_offset = static_cast<int>(ny) + alloc.y;
 
 	GdkRectangle rect {};
 
-#if GTK_CHECK_VERSION(3,22,0)
 	GdkDisplay *pdisplay = gtk_widget_get_display(PWidget(wid));
-	GdkMonitor *monitor = gdk_display_get_monitor_at_point(pdisplay,
-			      pt.x + x_offset, pt.y + y_offset);
-	gdk_monitor_get_geometry(monitor, &rect);
-#else
-	GdkScreen *screen = gtk_widget_get_screen(PWidget(wid));
-	const gint monitor_num = gdk_screen_get_monitor_at_point(screen,
-				 static_cast<gint>(pt.x) + x_offset, static_cast<gint>(pt.y) + y_offset);
-	gdk_screen_get_monitor_geometry(screen, monitor_num, &rect);
-#endif
+	GdkSurface *surface = SurfaceFromWidget(PWidget(wid));
+	if (surface) {
+		GdkMonitor *monitor = gdk_display_get_monitor_at_surface(pdisplay, surface);
+		if (monitor) {
+			gdk_monitor_get_geometry(monitor, &rect);
+		}
+	}
 	rect.x -= x_offset;
 	rect.y -= y_offset;
 	return PRectangle::FromInts(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
@@ -1432,9 +1419,7 @@ class ListBoxX : public ListBox {
 	int desiredVisibleRows;
 	unsigned int maxItemCharacters;
 	unsigned int aveCharWidth;
-#if GTK_CHECK_VERSION(3,0,0)
 	std::unique_ptr<GtkCssProvider, GObjectReleaser> cssProvider;
-#endif
 	float imageScale;
 public:
 	IListBoxDelegate *delegate;
