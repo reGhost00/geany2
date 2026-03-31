@@ -76,11 +76,7 @@ class ScintillaGTK : public ScintillaBase {
 	gdouble smoothScrollY;
 	gdouble smoothScrollX;
 
-#if GTK_CHECK_VERSION(3,0,0)
 	cairo_rectangle_list_t *rgnUpdate;
-#else
-	GdkRegion *rgnUpdate;
-#endif
 	bool repaintFullWindow;
 
 	guint styleIdleID;
