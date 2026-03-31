@@ -11,9 +11,9 @@ cxx = meson.get_compiler('cpp')
 prefix = get_option('prefix')
 
 deps_in = [
-	['glib-2.0',    '2.56'],
-	['gmodule-2.0', '2.56'],
-	['gtk+-3.0',    '3.24']
+	['glib-2.0',    '2.76'],
+	['gmodule-2.0', '2.76'],
+	['gtk4',        '4.12']
 ]
 
 deps = []
@@ -212,10 +212,6 @@ endif
 # CFLAGS common between Geany and bundled plugins
 def_cflags = basic_cflags + [
 	'-DGTK',
-# we're using lots of deprecated stuff with gtk3 (often because there is no proper alternative!)
-	'-Wno-deprecated-declarations',
-	'-DGDK_DISABLE_DEPRECATION_WARNINGS',
-	'-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_56',
 	'-DGEANY_PREFIX="@0@"'.format(get_option('prefix')),
 	'-DGEANY_DOCDIR="@0@"'.format(join_paths(prefix, get_option('datadir'), 'doc'))
 ]

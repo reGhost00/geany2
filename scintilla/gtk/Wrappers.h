@@ -86,22 +86,21 @@ using UniqueIMContext = std::unique_ptr<GtkIMContext, GObjectReleaser>;
 
 struct GdkEventReleaser {
 	void operator()(GdkEvent *ev) noexcept {
-		gdk_event_free(ev);
+		gdk_event_unref(ev);
 	}
 };
 
 using UniqueGdkEvent = std::unique_ptr<GdkEvent, GdkEventReleaser>;
 
 inline void UnRefCursor(GdkCursor *cursor) noexcept {
-#if GTK_CHECK_VERSION(3,0,0)
 	g_object_unref(cursor);
-#else
-	gdk_cursor_unref(cursor);
-#endif
 }
 
-[[nodiscard]] inline GdkWindow *WindowFromWidget(GtkWidget *w) noexcept {
-	return gtk_widget_get_window(w);
+[[nodiscard]] inline GdkSurface *SurfaceFromWidget(GtkWidget *w) noexcept {
+	GtkNative *native = gtk_widget_get_native(w);
+	if (native)
+		return gtk_native_get_surface(native);
+	return nullptr;
 }
 
 }
