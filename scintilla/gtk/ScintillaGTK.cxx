@@ -112,60 +112,16 @@ enum {
 
 gint scintilla_signals[LAST_SIGNAL] = { 0 };
 
-enum {
-	TARGET_STRING,
-	TARGET_TEXT,
-	TARGET_COMPOUND_TEXT,
-	TARGET_UTF8_STRING,
-	TARGET_URI
-};
-
-const GtkTargetEntry clipboardCopyTargets[] = {
-	{ (gchar *) "UTF8_STRING", 0, TARGET_UTF8_STRING },
-	{ (gchar *) "STRING", 0, TARGET_STRING },
-};
-constexpr gint nClipboardCopyTargets = static_cast<gint>(std::size(clipboardCopyTargets));
-
-const GtkTargetEntry clipboardPasteTargets[] = {
-	{ (gchar *) "text/uri-list", 0, TARGET_URI },
-	{ (gchar *) "UTF8_STRING", 0, TARGET_UTF8_STRING },
-	{ (gchar *) "STRING", 0, TARGET_STRING },
-};
-constexpr gint nClipboardPasteTargets = static_cast<gint>(std::size(clipboardPasteTargets));
-
-const GdkDragAction actionCopyOrMove = static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE);
-
 GtkWidget *PWidget(const Window &w) noexcept {
 	return static_cast<GtkWidget *>(w.GetID());
 }
 
-GdkWindow *PWindow(const Window &w) noexcept {
+GdkSurface *PSurface(const Window &w) noexcept {
 	GtkWidget *widget = static_cast<GtkWidget *>(w.GetID());
-	return gtk_widget_get_window(widget);
-}
-
-void MapWidget(GtkWidget *widget) noexcept {
-	if (widget &&
-		gtk_widget_get_visible(GTK_WIDGET(widget)) &&
-		!IS_WIDGET_MAPPED(widget)) {
-		gtk_widget_map(widget);
-	}
-}
-
-const guchar *DataOfGSD(GtkSelectionData *sd) noexcept {
-	return gtk_selection_data_get_data(sd);
-}
-
-gint LengthOfGSD(GtkSelectionData *sd) noexcept {
-	return gtk_selection_data_get_length(sd);
-}
-
-GdkAtom TypeOfGSD(GtkSelectionData *sd) noexcept {
-	return gtk_selection_data_get_data_type(sd);
-}
-
-GdkAtom SelectionOfGSD(GtkSelectionData *sd) noexcept {
-	return gtk_selection_data_get_selection(sd);
+	GtkNative *native = gtk_widget_get_native(widget);
+	if (native)
+		return gtk_native_get_surface(GTK_WIDGET(native));
+	return nullptr;
 }
 
 bool SettingGet(GtkSettings *settings, const gchar *name, gpointer value) noexcept {
@@ -271,51 +227,9 @@ ScintillaGTK::~ScintillaGTK() {
 }
 
 void ScintillaGTK::RealizeThis(GtkWidget *widget) {
-	//Platform::DebugPrintf("ScintillaGTK::realize this\n");
-	gtk_widget_set_realized(widget, TRUE);
-	GdkWindowAttr attrs {};
-	attrs.window_type = GDK_WINDOW_CHILD;
-	GtkAllocation allocation;
-	gtk_widget_get_allocation(widget, &allocation);
-	attrs.x = allocation.x;
-	attrs.y = allocation.y;
-	attrs.width = allocation.width;
-	attrs.height = allocation.height;
-	attrs.wclass = GDK_INPUT_OUTPUT;
-	attrs.visual = gtk_widget_get_visual(widget);
-#if !GTK_CHECK_VERSION(3,0,0)
-	attrs.colormap = gtk_widget_get_colormap(widget);
-#endif
-	attrs.event_mask = gtk_widget_get_events(widget) | GDK_EXPOSURE_MASK;
-	GdkDisplay *pdisplay = gtk_widget_get_display(widget);
-	GdkCursor *cursor = gdk_cursor_new_for_display(pdisplay, GDK_XTERM);
-	attrs.cursor = cursor;
-#if GTK_CHECK_VERSION(3,0,0)
-	gtk_widget_set_window(widget, gdk_window_new(gtk_widget_get_parent_window(widget), &attrs,
-			      GDK_WA_X | GDK_WA_Y | GDK_WA_VISUAL | GDK_WA_CURSOR));
-#if GTK_CHECK_VERSION(3,8,0)
-	gtk_widget_register_window(widget, gtk_widget_get_window(widget));
-#else
-	gdk_window_set_user_data(gtk_widget_get_window(widget), widget);
-#endif
-#if !GTK_CHECK_VERSION(3,18,0)
-	gtk_style_context_set_background(gtk_widget_get_style_context(widget),
-					 gtk_widget_get_window(widget));
-#endif
-	gdk_window_show(gtk_widget_get_window(widget));
-#else
-	widget->window = gdk_window_new(gtk_widget_get_parent_window(widget), &attrs,
-					GDK_WA_X | GDK_WA_Y | GDK_WA_VISUAL | GDK_WA_COLORMAP | GDK_WA_CURSOR);
-	gdk_window_set_user_data(widget->window, widget);
-	widget->style = gtk_style_attach(widget->style, widget->window);
-	gdk_window_set_background(widget->window, &widget->style->bg[GTK_STATE_NORMAL]);
-	gdk_window_show(widget->window);
-#endif
-	UnRefCursor(cursor);
+	GTK_WIDGET_CLASS(parentClass)->realize(widget);
 
 	preeditInitialized = false;
-	gtk_widget_realize(PWidget(wPreedit));
-	gtk_widget_realize(PWidget(wPreeditDraw));
 
 	im_context.reset(gtk_im_multicontext_new());
 	g_signal_connect(G_OBJECT(im_context.get()), "commit",
@@ -326,28 +240,16 @@ void ScintillaGTK::RealizeThis(GtkWidget *widget) {
 			 G_CALLBACK(RetrieveSurrounding), this);
 	g_signal_connect(G_OBJECT(im_context.get()), "delete-surrounding",
 			 G_CALLBACK(DeleteSurrounding), this);
-	gtk_im_context_set_client_window(im_context.get(), WindowFromWidget(widget));
+	gtk_im_context_set_client_widget(im_context.get(), widget);
 
-	GtkWidget *widtxt = PWidget(wText);	//	// No code inside the G_OBJECT macro
-	g_signal_connect_after(G_OBJECT(widtxt), "style_set",
-			       G_CALLBACK(ScintillaGTK::StyleSetText), nullptr);
+	GtkWidget *widtxt = PWidget(wText);
 	g_signal_connect_after(G_OBJECT(widtxt), "realize",
 			       G_CALLBACK(ScintillaGTK::RealizeText), nullptr);
-	gtk_widget_realize(widtxt);
-	gtk_widget_realize(PWidget(scrollbarv));
-	gtk_widget_realize(PWidget(scrollbarh));
 
-	cursor = gdk_cursor_new_for_display(pdisplay, GDK_XTERM);
-	gdk_window_set_cursor(PWindow(wText), cursor);
-	UnRefCursor(cursor);
-
-	cursor = gdk_cursor_new_for_display(pdisplay, GDK_LEFT_PTR);
-	gdk_window_set_cursor(PWindow(scrollbarv), cursor);
-	UnRefCursor(cursor);
-
-	cursor = gdk_cursor_new_for_display(pdisplay, GDK_LEFT_PTR);
-	gdk_window_set_cursor(PWindow(scrollbarh), cursor);
-	UnRefCursor(cursor);
+	// In GTK4, use gtk_widget_set_cursor_from_name instead of creating GdkCursor
+	gtk_widget_set_cursor_from_name(PWidget(wText), "text");
+	gtk_widget_set_cursor_from_name(PWidget(scrollbarv), "default");
+	gtk_widget_set_cursor_from_name(PWidget(scrollbarh), "default");
 
 	using NotifyLambda = void (*)(GObject *, GParamSpec *, ScintillaGTK *);
 	if (settings) {
@@ -366,22 +268,11 @@ void ScintillaGTK::Realize(GtkWidget *widget) {
 
 void ScintillaGTK::UnRealizeThis(GtkWidget *widget) {
 	try {
-		if (IS_WIDGET_MAPPED(widget)) {
-			gtk_widget_unmap(widget);
-		}
-		gtk_widget_set_realized(widget, FALSE);
-		gtk_widget_unrealize(PWidget(wText));
-		if (PWidget(scrollbarv))
-			gtk_widget_unrealize(PWidget(scrollbarv));
-		if (PWidget(scrollbarh))
-			gtk_widget_unrealize(PWidget(scrollbarh));
-		gtk_widget_unrealize(PWidget(wPreedit));
-		gtk_widget_unrealize(PWidget(wPreeditDraw));
 		im_context.reset();
-		if (GTK_WIDGET_CLASS(parentClass)->unrealize)
-			GTK_WIDGET_CLASS(parentClass)->unrealize(widget);
 
 		Finalise();
+
+		GTK_WIDGET_CLASS(parentClass)->unrealize(widget);
 	} catch (...) {
 		errorStatus = Status::Failure;
 	}
@@ -394,17 +285,8 @@ void ScintillaGTK::UnRealize(GtkWidget *widget) {
 
 void ScintillaGTK::MapThis() {
 	try {
-		//Platform::DebugPrintf("ScintillaGTK::map this\n");
-		gtk_widget_set_mapped(PWidget(wMain), TRUE);
-		MapWidget(PWidget(wText));
-		MapWidget(PWidget(scrollbarh));
-		MapWidget(PWidget(scrollbarv));
-		wMain.SetCursor(Window::Cursor::arrow);
-		scrollbarv.SetCursor(Window::Cursor::arrow);
-		scrollbarh.SetCursor(Window::Cursor::arrow);
 		SetClientRectangle();
 		ChangeSize();
-		gdk_window_show(PWindow(wMain));
 	} catch (...) {
 		errorStatus = Status::Failure;
 	}
@@ -417,15 +299,7 @@ void ScintillaGTK::Map(GtkWidget *widget) {
 
 void ScintillaGTK::UnMapThis() {
 	try {
-		//Platform::DebugPrintf("ScintillaGTK::unmap this\n");
-		gtk_widget_set_mapped(PWidget(wMain), FALSE);
 		DropGraphics();
-		gdk_window_hide(PWindow(wMain));
-		gtk_widget_unmap(PWidget(wText));
-		if (PWidget(scrollbarh))
-			gtk_widget_unmap(PWidget(scrollbarh));
-		if (PWidget(scrollbarv))
-			gtk_widget_unmap(PWidget(scrollbarv));
 	} catch (...) {
 		errorStatus = Status::Failure;
 	}
@@ -434,26 +308,6 @@ void ScintillaGTK::UnMapThis() {
 void ScintillaGTK::UnMap(GtkWidget *widget) {
 	ScintillaGTK *sciThis = FromWidget(widget);
 	sciThis->UnMapThis();
-}
-
-void ScintillaGTK::ForAll(GtkCallback callback, gpointer callback_data) {
-	try {
-		(*callback)(PWidget(wText), callback_data);
-		if (PWidget(scrollbarv))
-			(*callback)(PWidget(scrollbarv), callback_data);
-		if (PWidget(scrollbarh))
-			(*callback)(PWidget(scrollbarh), callback_data);
-	} catch (...) {
-		errorStatus = Status::Failure;
-	}
-}
-
-void ScintillaGTK::MainForAll(GtkContainer *container, gboolean include_internals, GtkCallback callback, gpointer callback_data) {
-	ScintillaGTK *sciThis = FromWidget(GTK_WIDGET(container));
-
-	if (callback && include_internals) {
-		sciThis->ForAll(callback, callback_data);
-	}
 }
 
 namespace {
@@ -497,8 +351,9 @@ gint ScintillaGTK::FocusInThis(GtkWidget *) {
 			PreEditString pes(im_context.get());
 			if (PWidget(wPreedit)) {
 				if (!preeditInitialized) {
-					GtkWidget *top = gtk_widget_get_toplevel(PWidget(wMain));
-					gtk_window_set_transient_for(GTK_WINDOW(PWidget(wPreedit)), GTK_WINDOW(top));
+					GtkRoot *root = gtk_widget_get_root(PWidget(wMain));
+					if (root && GTK_IS_WINDOW(root))
+						gtk_window_set_transient_for(GTK_WINDOW(PWidget(wPreedit)), GTK_WINDOW(root));
 					preeditInitialized = true;
 				}
 
@@ -513,11 +368,6 @@ gint ScintillaGTK::FocusInThis(GtkWidget *) {
 		errorStatus = Status::Failure;
 	}
 	return FALSE;
-}
-
-gint ScintillaGTK::FocusIn(GtkWidget *widget, GdkEventFocus * /*event*/) {
-	ScintillaGTK *sciThis = FromWidget(widget);
-	return sciThis->FocusInThis(widget);
 }
 
 gint ScintillaGTK::FocusOutThis(GtkWidget *) {
@@ -535,54 +385,19 @@ gint ScintillaGTK::FocusOutThis(GtkWidget *) {
 	return FALSE;
 }
 
-gint ScintillaGTK::FocusOut(GtkWidget *widget, GdkEventFocus * /*event*/) {
-	ScintillaGTK *sciThis = FromWidget(widget);
-	return sciThis->FocusOutThis(widget);
-}
-
-void ScintillaGTK::SizeRequest(GtkWidget *widget, GtkRequisition *requisition) {
-	const ScintillaGTK *sciThis = FromWidget(widget);
-	requisition->width = 1;
-	requisition->height = 1;
-	GtkRequisition child_requisition;
-#if GTK_CHECK_VERSION(3,0,0)
-	gtk_widget_get_preferred_size(PWidget(sciThis->scrollbarh), nullptr, &child_requisition);
-	gtk_widget_get_preferred_size(PWidget(sciThis->scrollbarv), nullptr, &child_requisition);
-#else
-	gtk_widget_size_request(PWidget(sciThis->scrollbarh), &child_requisition);
-	gtk_widget_size_request(PWidget(sciThis->scrollbarv), &child_requisition);
-#endif
-}
-
-#if GTK_CHECK_VERSION(3,0,0)
-
 void ScintillaGTK::GetPreferredWidth(GtkWidget *widget, gint *minimalWidth, gint *naturalWidth) {
-	GtkRequisition requisition;
-	SizeRequest(widget, &requisition);
-	*minimalWidth = *naturalWidth = requisition.width;
+	*minimalWidth = *naturalWidth = 1;
 }
 
 void ScintillaGTK::GetPreferredHeight(GtkWidget *widget, gint *minimalHeight, gint *naturalHeight) {
-	GtkRequisition requisition;
-	SizeRequest(widget, &requisition);
-	*minimalHeight = *naturalHeight = requisition.height;
+	*minimalHeight = *naturalHeight = 1;
 }
 
-#endif
-
-void ScintillaGTK::SizeAllocate(GtkWidget *widget, GtkAllocation *allocation) {
+void ScintillaGTK::SizeAllocate(GtkWidget *widget, int width, int height, int baseline) {
 	ScintillaGTK *sciThis = FromWidget(widget);
 	try {
-		gtk_widget_set_allocation(widget, allocation);
-		if (IS_WIDGET_REALIZED(widget))
-			gdk_window_move_resize(WindowFromWidget(widget),
-					       allocation->x,
-					       allocation->y,
-					       allocation->width,
-					       allocation->height);
-
-		sciThis->Resize(allocation->width, allocation->height);
-
+		GTK_WIDGET_CLASS(sciThis->parentClass)->size_allocate(widget, width, height, baseline);
+		sciThis->Resize(width, height);
 	} catch (...) {
 		sciThis->errorStatus = Status::Failure;
 	}
@@ -590,101 +405,160 @@ void ScintillaGTK::SizeAllocate(GtkWidget *widget, GtkAllocation *allocation) {
 
 void ScintillaGTK::Init() {
 	parentClass = static_cast<GtkWidgetClass *>(
-			      g_type_class_ref(gtk_container_get_type()));
+			      g_type_class_ref(gtk_widget_get_type()));
 
-	gint maskSmooth = 0;
-#if defined(GDK_WINDOWING_WAYLAND)
-	GdkDisplay *pdisplay = gdk_display_get_default();
-	if (GDK_IS_WAYLAND_DISPLAY(pdisplay)) {
-		// On Wayland, touch pads only produce smooth scroll events
-		maskSmooth = GDK_SMOOTH_SCROLL_MASK;
-	}
-#endif
-
-	gtk_widget_set_can_focus(PWidget(wMain), TRUE);
+	gtk_widget_set_focusable(PWidget(wMain), TRUE);
 	gtk_widget_set_sensitive(PWidget(wMain), TRUE);
-	gtk_widget_set_events(PWidget(wMain),
-			      GDK_EXPOSURE_MASK
-			      | GDK_SCROLL_MASK
-			      | maskSmooth
-			      | GDK_STRUCTURE_MASK
-			      | GDK_KEY_PRESS_MASK
-			      | GDK_KEY_RELEASE_MASK
-			      | GDK_FOCUS_CHANGE_MASK
-			      | GDK_LEAVE_NOTIFY_MASK
-			      | GDK_BUTTON_PRESS_MASK
-			      | GDK_BUTTON_RELEASE_MASK
-			      | GDK_POINTER_MOTION_MASK
-			      | GDK_POINTER_MOTION_HINT_MASK);
 
 	wText = gtk_drawing_area_new();
 	gtk_widget_set_parent(PWidget(wText), PWidget(wMain));
-	GtkWidget *widtxt = PWidget(wText);	// No code inside the G_OBJECT macro
-	gtk_widget_show(widtxt);
-#if GTK_CHECK_VERSION(3,0,0)
-	g_signal_connect(G_OBJECT(widtxt), "draw",
-			 G_CALLBACK(ScintillaGTK::DrawText), this);
-#else
-	g_signal_connect(G_OBJECT(widtxt), "expose_event",
-			 G_CALLBACK(ScintillaGTK::ExposeText), this);
-#endif
-#if GTK_CHECK_VERSION(3,0,0)
-	// we need a runtime check because we don't want double buffering when
-	// running on >= 3.9.2
-	if (gtk_check_version(3, 9, 2) != nullptr /* on < 3.9.2 */)
-#endif
-	{
-#if !GTK_CHECK_VERSION(3,14,0)
-		// Avoid background drawing flash/missing redraws
-		gtk_widget_set_double_buffered(widtxt, FALSE);
-#endif
-	}
-	gtk_widget_set_events(widtxt, GDK_EXPOSURE_MASK);
+	GtkWidget *widtxt = PWidget(wText);
+	gtk_widget_set_visible(widtxt, TRUE);
+	gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(widtxt),
+		[](GtkDrawingArea *, cairo_t *cr, int, int, gpointer data) {
+			static_cast<ScintillaGTK *>(data)->DrawTextThis(cr);
+		}, this, nullptr);
 	gtk_widget_set_size_request(widtxt, 100, 100);
+
 	adjustmentv = GTK_ADJUSTMENT(gtk_adjustment_new(0.0, 0.0, 201.0, 1.0, 20.0, 20.0));
-#if GTK_CHECK_VERSION(3,0,0)
 	scrollbarv = gtk_scrollbar_new(GTK_ORIENTATION_VERTICAL, GTK_ADJUSTMENT(adjustmentv));
-#else
-	scrollbarv = gtk_vscrollbar_new(GTK_ADJUSTMENT(adjustmentv));
-#endif
-	gtk_widget_set_can_focus(PWidget(scrollbarv), FALSE);
+	gtk_widget_set_focusable(PWidget(scrollbarv), FALSE);
 	g_signal_connect(G_OBJECT(adjustmentv), "value_changed",
 			 G_CALLBACK(ScrollSignal), this);
 	gtk_widget_set_parent(PWidget(scrollbarv), PWidget(wMain));
-	gtk_widget_show(PWidget(scrollbarv));
+	gtk_widget_set_visible(PWidget(scrollbarv), TRUE);
 
 	adjustmenth = GTK_ADJUSTMENT(gtk_adjustment_new(0.0, 0.0, 101.0, 1.0, 20.0, 20.0));
-#if GTK_CHECK_VERSION(3,0,0)
 	scrollbarh = gtk_scrollbar_new(GTK_ORIENTATION_HORIZONTAL, GTK_ADJUSTMENT(adjustmenth));
-#else
-	scrollbarh = gtk_hscrollbar_new(GTK_ADJUSTMENT(adjustmenth));
-#endif
-	gtk_widget_set_can_focus(PWidget(scrollbarh), FALSE);
+	gtk_widget_set_focusable(PWidget(scrollbarh), FALSE);
 	g_signal_connect(G_OBJECT(adjustmenth), "value_changed",
 			 G_CALLBACK(ScrollHSignal), this);
 	gtk_widget_set_parent(PWidget(scrollbarh), PWidget(wMain));
-	gtk_widget_show(PWidget(scrollbarh));
+	gtk_widget_set_visible(PWidget(scrollbarh), TRUE);
 
 	gtk_widget_grab_focus(PWidget(wMain));
 
-	gtk_drag_dest_set(GTK_WIDGET(PWidget(wMain)),
-			  GTK_DEST_DEFAULT_ALL, clipboardPasteTargets, nClipboardPasteTargets,
-			  actionCopyOrMove);
+	// Set up DND with GtkDropTarget - accept both text and file drops
+	GType drop_types[] = { G_TYPE_STRING, GDK_TYPE_FILE_LIST };
+	GtkDropTarget *drop_target = gtk_drop_target_new(G_TYPE_INVALID, static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+	gtk_drop_target_set_gtypes(drop_target, drop_types, G_N_ELEMENTS(drop_types));
+	g_signal_connect(drop_target, "drop", G_CALLBACK(Drop), this);
+	g_signal_connect(drop_target, "motion", G_CALLBACK(DragMotion), this);
+	g_signal_connect(drop_target, "leave", G_CALLBACK(DragLeave), this);
+	gtk_widget_add_controller(PWidget(wMain), GTK_EVENT_CONTROLLER(drop_target));
+
+	// Set up event controllers
+	// Key events
+	GtkEventController *key_controller = gtk_event_controller_key_new();
+	g_signal_connect(key_controller, "key-pressed",
+		G_CALLBACK(+[](GtkEventControllerKey *, guint keyval, guint keycode,
+		               GdkModifierType state, gpointer data) -> gboolean {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			return sciThis->KeyThis(keyval, keycode, state);
+		}), this);
+	g_signal_connect(key_controller, "key-released",
+		G_CALLBACK(+[](GtkEventControllerKey *controller, guint keyval, guint keycode,
+		               GdkModifierType state, gpointer data) -> void {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			if (sciThis->im_context) {
+				GdkEvent *event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
+				if (event)
+					gtk_im_context_filter_keypress(sciThis->im_context.get(), event);
+			}
+		}), this);
+	gtk_event_controller_set_propagation_phase(key_controller, GTK_PHASE_CAPTURE);
+	gtk_widget_add_controller(PWidget(wMain), key_controller);
+
+	// Mouse click events
+	GtkGesture *click_gesture = gtk_gesture_click_new();
+	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_gesture), 0); // all buttons
+	g_signal_connect(click_gesture, "pressed",
+		G_CALLBACK(+[](GtkGestureClick *gesture, int n_press, double x, double y, gpointer data) {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			sciThis->PressThis(n_press, x, y, gesture);
+		}), this);
+	g_signal_connect(click_gesture, "released",
+		G_CALLBACK(+[](GtkGestureClick *gesture, int n_press, double x, double y, gpointer data) {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			if (!sciThis->HaveMouseCapture())
+				return;
+			guint button = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(gesture));
+			if (button == 1) {
+				GdkModifierType state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+				const Point pt(static_cast<XYPOSITION>(std::floor(x)), static_cast<XYPOSITION>(std::floor(y)));
+				const KeyMod modifiers = ModifierFlags(
+					(state & GDK_SHIFT_MASK) != 0,
+					(state & GDK_CONTROL_MASK) != 0,
+					(state & modifierTranslated(sciThis->rectangularSelectionModifier)) != 0);
+				GdkEvent *event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(gesture));
+				sciThis->ButtonUpWithModifiers(pt, event ? gdk_event_get_time(event) : GDK_CURRENT_TIME, modifiers);
+			}
+		}), this);
+	gtk_widget_add_controller(PWidget(wMain), GTK_EVENT_CONTROLLER(click_gesture));
+
+	// Motion events
+	GtkEventController *motion_controller = gtk_event_controller_motion_new();
+	g_signal_connect(motion_controller, "motion",
+		G_CALLBACK(+[](GtkEventControllerMotion *controller, double x, double y, gpointer data) {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			GdkModifierType state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
+			GdkEvent *event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
+			const Point pt(static_cast<XYPOSITION>(std::floor(x)), static_cast<XYPOSITION>(std::floor(y)));
+			const KeyMod modifiers = ModifierFlags(
+				(state & GDK_SHIFT_MASK) != 0,
+				(state & GDK_CONTROL_MASK) != 0,
+				(state & modifierTranslated(sciThis->rectangularSelectionModifier)) != 0);
+			sciThis->ButtonMoveWithModifiers(pt, event ? gdk_event_get_time(event) : 0, modifiers);
+		}), this);
+	gtk_widget_add_controller(PWidget(wMain), motion_controller);
+
+	// Scroll events
+	GtkEventController *scroll_controller = gtk_event_controller_scroll_new(
+		static_cast<GtkEventControllerScrollFlags>(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES | GTK_EVENT_CONTROLLER_SCROLL_DISCRETE));
+	g_signal_connect(scroll_controller, "scroll",
+		G_CALLBACK(+[](GtkEventControllerScroll *controller, double dx, double dy, gpointer data) -> gboolean {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			GdkModifierType state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
+			if (state & GDK_CONTROL_MASK) {
+				if (dy < 0) sciThis->KeyCommand(Message::ZoomIn);
+				else if (dy > 0) sciThis->KeyCommand(Message::ZoomOut);
+			} else if (state & GDK_SHIFT_MASK || dx != 0) {
+				int hScroll = static_cast<int>(gtk_adjustment_get_step_increment(sciThis->adjustmenth));
+				sciThis->HorizontalScrollTo(sciThis->xOffset + static_cast<int>(dx) * hScroll);
+			} else {
+				int cLineScroll = sciThis->linesPerScroll;
+				if (cLineScroll == 0) cLineScroll = 4;
+				sciThis->ScrollTo(sciThis->topLine + static_cast<int>(dy) * cLineScroll);
+			}
+			return TRUE;
+		}), this);
+	gtk_widget_add_controller(PWidget(wMain), scroll_controller);
+
+	// Focus events
+	GtkEventController *focus_controller = gtk_event_controller_focus_new();
+	g_signal_connect(focus_controller, "enter",
+		G_CALLBACK(+[](GtkEventControllerFocus *, gpointer data) {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			sciThis->FocusInThis(PWidget(sciThis->wMain));
+		}), this);
+	g_signal_connect(focus_controller, "leave",
+		G_CALLBACK(+[](GtkEventControllerFocus *, gpointer data) {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			sciThis->FocusOutThis(PWidget(sciThis->wMain));
+		}), this);
+	gtk_widget_add_controller(PWidget(wMain), focus_controller);
 
 	/* create pre-edit window */
-	wPreedit = gtk_window_new(GTK_WINDOW_POPUP);
-	gtk_window_set_type_hint(GTK_WINDOW(PWidget(wPreedit)), GDK_WINDOW_TYPE_HINT_POPUP_MENU);
+	wPreedit = gtk_window_new();
 	wPreeditDraw = gtk_drawing_area_new();
-	GtkWidget *predrw = PWidget(wPreeditDraw);      // No code inside the G_OBJECT macro
-#if GTK_CHECK_VERSION(3,0,0)
-	g_signal_connect(G_OBJECT(predrw), "draw",
-			 G_CALLBACK(DrawPreedit), this);
-#else
-	g_signal_connect(G_OBJECT(predrw), "expose_event",
-			 G_CALLBACK(ExposePreedit), this);
-#endif
-	gtk_container_add(GTK_CONTAINER(PWidget(wPreedit)), predrw);
-	gtk_widget_show(predrw);
+	GtkWidget *predrw = PWidget(wPreeditDraw);
+	gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(predrw),
+		[](GtkDrawingArea *, cairo_t *cr, int, int, gpointer data) {
+			ScintillaGTK *sciThis = static_cast<ScintillaGTK *>(data);
+			sciThis->DrawPreeditThis(PWidget(sciThis->wPreeditDraw), cr);
+		}, this, nullptr);
+	gtk_window_set_child(GTK_WINDOW(PWidget(wPreedit)), predrw);
+	gtk_widget_set_visible(predrw, TRUE);
 
 	settings = gtk_settings_get_default();
 
