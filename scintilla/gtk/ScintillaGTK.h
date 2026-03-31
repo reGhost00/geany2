@@ -47,12 +47,12 @@ class ScintillaGTK : public ScintillaBase {
 
 	GtkWidgetClass *parentClass;
 
-	static inline const char *atomUTF8;
-	static inline const char *atomUTF8Mime;
-	static inline const char *atomString;
-	static inline const char *atomUriList;
-	static inline const char *atomDROPFILES_DND;
-	const char *atomSought;
+	static inline const char *atomUTF8 = nullptr;
+	static inline const char *atomUTF8Mime = nullptr;
+	static inline const char *atomString = nullptr;
+	static inline const char *atomUriList = nullptr;
+	static inline const char *atomDROPFILES_DND = nullptr;
+	const char *atomSought = nullptr;
 	size_t inClearSelection = 0;
 
 #if PLAT_GTK_WIN32
