@@ -1,45 +1,37 @@
-TODO List:
-----------
-Note: features included in brackets have lower priority.
+此文档是将 geany2 转到 gtk4 的分步描述
+参考 doc/architecture-current 了解初始情况
+参考 https://docs.gtk.org/gtk4/migrating-3to4.html 了解如何从 gtk3 迁移至 gtk4
+参考 https://gnome.pages.gitlab.gnome.org/gtksourceview/gtksourceview5/
 
-	Fix bugs:
-	o tagmanager fails on UTF-16/32
+## 阶段1：GTK4 基线（当前已完成）
+目标：可以使用 gtk4 编译运行，并保留最核心的单文档编辑能力
 
+已完成：
+1. 使用 GTK4 + GtkSourceView5 替代 GTK3 + Scintilla 作为当前默认构建目标
+2. 主程序入口改为 `app_new()` + `GtkApplication`
+3. `app_init_plugins()`、`app_init_ipc()`、`app_init_editor()`、`app_init_ui()` 骨架已建立
+4. UI 改为纯代码构建，拆分为 toolbar / sidebar / editor / footbar
+5. 核心编辑功能已覆盖：新建、打开、编辑、保存、另存为
+6. 构建系统当前提供 Meson 和 CMake 两条 GTK4 基线路径
 
-	Next version or later:
-	o better file template {filename} wildcard replacement +{BASENAME}
-	o improve line breaking mode
-	o print text size/zoom option
-	o documentation: list and explain filetype modes
-	o common default highlighting styles configurable for all
-	  programming languages (done for C-like filetypes using
-	  filetypes.common named styles)
-	o asynchronous build commands on Windows
-	o (filetype-independent run command in build dialog & keybinding)
-	o (better custom filetype support)
-	o (custom template insertion - so user can add licenses, etc)
-	o (selectable menu of arguments to use for Make, from Make Custom)
-	o (DBUS)
-	o (sci macro support - as a plugin?)
-	o (tango-like icons for the symbol list)
-	o (per-workspace instances with socket support - see
-	   workspace-sockets branch)
+阶段1 暂不实现：
+1. 多文档/标签页管理
+2. 搜索与替换
+3. 打印
+4. 项目管理
+5. 构建系统集成
+6. VTE 终端
+7. 插件加载与旧 ABI 兼容
+8. TagManager / 符号树 / 自动补全
+9. 偏好设置、主题、会话恢复
+10. 旧 Glade、GtkUIManager、GtkToolbar 兼容层
+11. autotools 清理
 
-
-	Someday:
-	o stable plugin ABI? (Split up geany_data, prefs, GeanyKeyCommand
-	  enum into groups)
-	o review documentation
-
-
-Wishlist
---------
-Note: these items might not get worked on.
-
-	o (calltip support for more non-C-like languages that use
-	   function_name(arguments) syntax - see python.c:parseArglist())
-	o (better tags support for popular languages? - this is a moving
-	   target...)
-	o (support for adding syntax highlighting dynamically?)
-	o Some kind of support for CTags tags files
-	o Python plugin interface (different concept from Lua scripting)
+## 下阶段任务
+1. 抽象文档模型，恢复多文档与标签页
+2. 重新设计插件接口：插件通过 GModule 暴露 `init_plugin()`，返回版本化函数表
+3. 迁移搜索/替换、打印、项目、构建输出等原核心模块到 GtkSourceView5 文本模型
+4. 重新引入符号树、TagManager 和补全能力
+5. 评估并迁移单实例 IPC 的 Geany 特有语义
+6. 恢复偏好设置、会话恢复和更多 UI 状态持久化
+7. 清理仓库中的 GTK3 / Scintilla / autotools 遗留代码与构建脚本
